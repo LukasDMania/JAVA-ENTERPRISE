@@ -2,7 +2,9 @@ package be.ucll.views;
 
 import be.ucll.dto.LoginDTO;
 
+import be.ucll.services.LoginService;
 import be.ucll.util.AppLayoutTemplate;
+import be.ucll.util.AppRoutes;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.html.Span;
@@ -14,24 +16,15 @@ import com.vaadin.flow.data.binder.Binder;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import jakarta.annotation.security.PermitAll;
-import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.core.AuthenticationException;
 
-@Route("login")
+@Route(AppRoutes.LOGIN_VIEW)
 @PageTitle("Login")
 @PermitAll
 public class LoginView extends AppLayoutTemplate {
-
     @Autowired
-    private AuthenticationManager authenticationManager;
-
-    @Autowired
-    private HttpServletRequest httpServletRequest;
+    private LoginService loginService;
 
     public LoginView() {
         setBody(buildLoginForm());
@@ -46,19 +39,9 @@ public class LoginView extends AppLayoutTemplate {
         Span errorLabel = new Span();
         errorLabel.getStyle().set("color", "red");
 
-        binder.forField(username)
-                .asRequired("Gebruikersnaam is verplicht")
-                .bind(LoginDTO::getUsername, LoginDTO::setUsername);
-        binder.forField(password)
-                .asRequired("Wachtwoord is verplicht")
-                .bind(LoginDTO::getPassword, LoginDTO::setPassword);
+        Button loginButton = createLoginButton(binder, loginDTO, errorLabel);
 
-        Button loginButton = new Button("Login", event -> {
-            if (binder.isValid()) {
-                Notification.show("BINDER VALID is verplicht", 3000, Notification.Position.MIDDLE);
-                handleLogin(username.getValue(), password.getValue(), errorLabel);
-            }
-        });
+        configureBinder(binder, username, password, loginButton);
 
         FormLayout formLayout = new FormLayout(username, password, loginButton);
         formLayout.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1));
@@ -72,19 +55,40 @@ public class LoginView extends AppLayoutTemplate {
         return wrapper;
     }
 
-    private void handleLogin(String username, String password, Span errorLabel) {
-        Notification.show("BINDER VALID", 3000, Notification.Position.MIDDLE);
-        UsernamePasswordAuthenticationToken authRequest = new UsernamePasswordAuthenticationToken(username, password);
+    private void configureBinder(Binder<LoginDTO> binder, TextField username, PasswordField password, Button loginButton) {
+        binder.forField(username)
+                .asRequired("Gebruikersnaam is verplicht")
+                .bind(LoginDTO::getUsername, LoginDTO::setUsername);
+        binder.forField(password)
+                .asRequired("Wachtwoord is verplicht")
+                .bind(LoginDTO::getPassword, LoginDTO::setPassword);
 
-        Authentication authentication = authenticationManager.authenticate(authRequest);
+        binder.addStatusChangeListener(_ -> {
+            loginButton.setEnabled(binder.isValid());
+        });
+    }
+    private Button createLoginButton(Binder<LoginDTO> binder, LoginDTO loginDTO, Span errorLabel) {
+        Button loginButton = new Button("Login");
+        loginButton.setEnabled(false);
 
-        //store in sesh
-        SecurityContextHolder.getContext().setAuthentication(authentication);
-        httpServletRequest.getSession().setAttribute(
-                HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
-                SecurityContextHolder.getContext());
+        loginButton.addClickListener(_ -> {
+            if (binder.writeBeanIfValid(loginDTO)) {
+                handleLogin(loginDTO, errorLabel);
+            } else {
+                errorLabel.setText("Ongeldige gebruikersnaam of wachtwoord.");
+            }
+        });
 
-        Notification.show("Login Successful", 2000, Notification.Position.MIDDLE);
-        getUI().ifPresent(ui -> ui.navigate("dashboard"));
+        return loginButton;
+    }
+
+    private void handleLogin(LoginDTO loginDTO, Span errorLabel) {
+        try {
+            loginService.authenticate(loginDTO);
+            Notification.show("Login Successful", 2000, Notification.Position.MIDDLE);
+            getUI().ifPresent(ui -> ui.navigate(AppRoutes.DASHBOARD_VIEW));
+        } catch (AuthenticationException e) {
+            errorLabel.setText("Ongeldige gebruikersnaam of wachtwoord.");
+        }
     }
 }

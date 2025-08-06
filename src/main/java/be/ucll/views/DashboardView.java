@@ -1,6 +1,7 @@
 package be.ucll.views;
 
 import be.ucll.util.AppLayoutTemplate;
+import be.ucll.util.AppRoutes;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.html.H1;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -8,7 +9,7 @@ import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import jakarta.annotation.security.PermitAll;
 
-@Route("dashboard")
+@Route(AppRoutes.DASHBOARD_VIEW)
 @PageTitle("Order Dashboard")
 @PermitAll
 public class DashboardView extends AppLayoutTemplate {
