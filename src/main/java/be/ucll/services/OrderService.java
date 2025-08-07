@@ -27,8 +27,10 @@ public class OrderService {
         CriteriaQuery<Order> query = cb.createQuery(Order.class);
         Root<Order> order = query.from(Order.class);
 
+        order.fetch("products", JoinType.LEFT);
+
         List<Predicate> predicates = new ArrayList<>();
-        
+
         if (searchCriteriaDTO.getMinAmount() != null) {
             predicates.add(cb.ge(order.get("totalPrice"), searchCriteriaDTO.getMinAmount()));
         }
@@ -42,18 +44,15 @@ public class OrderService {
 
         // Add product name predicate
         if (searchCriteriaDTO.getProductName() != null && !searchCriteriaDTO.getProductName().isBlank()) {
-            Join<Object, Object> productJoin = order.join("products");
-            predicates.add(cb.like(cb.lower(productJoin.get("name")), "%" + searchCriteriaDTO.getProductName().toLowerCase() + "%"));
+            Join<Object, Object> productJoin = order.join("products", JoinType.LEFT);
+            predicates.add(cb.like(cb.lower(productJoin.get("name")),
+                    "%" + searchCriteriaDTO.getProductName().toLowerCase() + "%"));
             query.distinct(true);
         }
 
+        // Use cb.size() for product count
         if (searchCriteriaDTO.getProductCount() != null) {
-            Subquery<Long> subquery = query.subquery(Long.class);
-            Root<Order> subOrder = subquery.from(Order.class);
-            subquery.select(subOrder.get("id"))
-                    .where(cb.equal(cb.size(subOrder.get("products")), searchCriteriaDTO.getProductCount()));
-
-            predicates.add(order.get("id").in(subquery));
+            predicates.add(cb.equal(cb.size(order.get("products")), searchCriteriaDTO.getProductCount()));
         }
 
         query.select(order).where(predicates.toArray(new Predicate[0]));
