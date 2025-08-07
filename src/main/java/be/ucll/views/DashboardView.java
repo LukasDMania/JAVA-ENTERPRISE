@@ -38,7 +38,7 @@ public class DashboardView extends AppLayoutTemplate {
     @Autowired
     private JmsEmailService jmsEmailService;
 
-    private final SearchCriteriaDTO searchCriteriaDTO = new SearchCriteriaDTO();
+    private SearchCriteriaDTO searchCriteriaDTO = new SearchCriteriaDTO();
     private final Binder<SearchCriteriaDTO> binder = new Binder<>(SearchCriteriaDTO.class);
 
     private final Grid<Order> orderGrid = new Grid<>();
@@ -87,7 +87,11 @@ public class DashboardView extends AppLayoutTemplate {
                 .bind(SearchCriteriaDTO::getMaxAmount, SearchCriteriaDTO::setMaxAmount);
 
         binder.forField(productCount)
-                .withConverter(Double::intValue, Integer::doubleValue)
+                .withConverter(
+                        doubleValue -> doubleValue == null ? null : doubleValue.intValue(),
+                        intValue -> intValue == null ? null : intValue.doubleValue(),
+                        "Het aantal moet een nummer zijn"
+                )
                 .withValidator(val -> val == null || val >= 0, "Aantal moet positief zijn")
                 .bind(SearchCriteriaDTO::getProductCount, SearchCriteriaDTO::setProductCount);
 
@@ -98,7 +102,7 @@ public class DashboardView extends AppLayoutTemplate {
                 .bind(SearchCriteriaDTO::getProductName, SearchCriteriaDTO::setProductName);
 
         binder.forField(email)
-                .withValidator(value -> value == null || value.matches("^[A-Za-z]+@[A-Za-z]+\\.[A-Za-z]{2,}$"),
+                .withValidator(value -> value == null || value.isBlank() || value.matches("^[A-Za-z]+@[A-Za-z]+\\.[A-Za-z]{2,}$"),
                         "Ongeldig e-mailadres")
                 .bind(SearchCriteriaDTO::getEmail, SearchCriteriaDTO::setEmail);
 
@@ -109,18 +113,35 @@ public class DashboardView extends AppLayoutTemplate {
         });
 
         Button searchButton = new Button("Zoeken", event -> {
-            if (!hasAtLeastOneCriteria()) {
-                errorLabel.setText("Geef ten minste één zoekcriteria op.");
-                return;
-            }
-            if (binder.writeBeanIfValid(searchCriteriaDTO)) {
-                List<Order> results = orderService.searchOrders(searchCriteriaDTO); //TODO: implement in serv
+            SearchCriteriaDTO tempCriteria = new SearchCriteriaDTO();
+
+            if (binder.writeBeanIfValid(tempCriteria)) {
+                if (!hasAtLeastOneCriteria(tempCriteria)) {
+                    // Error handling for no criteria
+                    errorLabel.setText("Geef ten minste één zoekcriteria op.");
+                    // ADD THIS RETURN STATEMENT
+                    return;
+                }
+
+                this.searchCriteriaDTO = tempCriteria;
+                // Search logic
+                List<Order> results = orderService.searchOrders(searchCriteriaDTO);
+
+                // Notification and UI updates
+                if (results.isEmpty()) {
+                    Notification.show("Geen resultaten gevonden.", 3000, Notification.Position.MIDDLE);
+                } else {
+                    Notification.show(results.size() + " resultaten gevonden.", 3000, Notification.Position.MIDDLE);
+                }
+
                 orderGrid.setItems(results);
-                errorLabel.setText("");
+                errorLabel.setText(""); // This will clear the error only after a successful search with results
             } else {
+                // Error handling for binder validation failures
                 errorLabel.setText("Vul de velden correct in.");
             }
         });
+
 
         FormLayout formLayout = new FormLayout(
                 minAmount, maxAmount, productCount, delivered,
@@ -170,19 +191,19 @@ public class DashboardView extends AppLayoutTemplate {
         return orderGrid;
     }
 
-    private boolean hasAtLeastOneCriteria() {
-        if (searchCriteriaDTO.getMinAmount() != null ||
-                 searchCriteriaDTO.getMaxAmount() != null ||
-                searchCriteriaDTO.getProductCount() != null) {
+    private boolean hasAtLeastOneCriteria(SearchCriteriaDTO criteria) {
+        if (criteria.getMinAmount() != null ||
+                criteria.getMaxAmount() != null ||
+                criteria.getProductCount() != null) {
             return true;
         }
 
-        String productName = searchCriteriaDTO.getProductName();
+        String productName = criteria.getProductName();
         if (productName != null && !productName.isBlank()) {
             return true;
         }
 
-        String email = searchCriteriaDTO.getEmail();
+        String email = criteria.getEmail();
         if (email != null && !email.isBlank()) {
             return true;
         }
