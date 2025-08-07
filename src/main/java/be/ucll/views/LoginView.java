@@ -27,10 +27,10 @@ public class LoginView extends AppLayoutTemplate {
     private LoginService loginService;
 
     public LoginView() {
-        setBody(buildLoginForm());
+        setBody(buildLoginLayout());
     }
 
-    private VerticalLayout buildLoginForm() {
+    private VerticalLayout buildLoginLayout() {
         LoginDTO loginDTO = new LoginDTO();
         Binder<LoginDTO> binder = new Binder<>(LoginDTO.class);
 
