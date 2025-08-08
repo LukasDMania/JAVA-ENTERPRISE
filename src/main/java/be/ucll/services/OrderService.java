@@ -41,8 +41,7 @@ public class OrderService {
         if (searchCriteriaDTO.isDelivered()) {
             predicates.add(cb.isTrue(order.get("delivered")));
         }
-
-        // Add product name predicate
+        
         if (searchCriteriaDTO.getProductName() != null && !searchCriteriaDTO.getProductName().isBlank()) {
             Join<Object, Object> productJoin = order.join("products", JoinType.LEFT);
             predicates.add(cb.like(cb.lower(productJoin.get("name")),

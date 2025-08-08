@@ -2,7 +2,7 @@ package be.ucll.views;
 
 import be.ucll.dto.SearchCriteriaDTO;
 import be.ucll.entities.Order;
-import be.ucll.services.JmsEmailService;
+import be.ucll.services.EmailQueueProducerService;
 import be.ucll.services.OrderService;
 import be.ucll.util.AppLayoutTemplate;
 import be.ucll.util.AppRoutes;
@@ -36,7 +36,7 @@ public class DashboardView extends AppLayoutTemplate {
     private OrderService orderService;
 
     @Autowired
-    private JmsEmailService jmsEmailService;
+    private EmailQueueProducerService jmsEmailService;
 
     private SearchCriteriaDTO searchCriteriaDTO = new SearchCriteriaDTO();
     private final Binder<SearchCriteriaDTO> binder = new Binder<>(SearchCriteriaDTO.class);
@@ -102,7 +102,8 @@ public class DashboardView extends AppLayoutTemplate {
                 .bind(SearchCriteriaDTO::getProductName, SearchCriteriaDTO::setProductName);
 
         binder.forField(email)
-                .withValidator(value -> value == null || value.isBlank() || value.matches("^[A-Za-z]+@[A-Za-z]+\\.[A-Za-z]{2,}$"),
+                .withValidator(value -> value == null
+                                || value.matches("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"),
                         "Ongeldig e-mailadres")
                 .bind(SearchCriteriaDTO::getEmail, SearchCriteriaDTO::setEmail);
 
@@ -117,17 +118,13 @@ public class DashboardView extends AppLayoutTemplate {
 
             if (binder.writeBeanIfValid(tempCriteria)) {
                 if (!hasAtLeastOneCriteria(tempCriteria)) {
-                    // Error handling for no criteria
                     errorLabel.setText("Geef ten minste één zoekcriteria op.");
-                    // ADD THIS RETURN STATEMENT
                     return;
                 }
 
                 this.searchCriteriaDTO = tempCriteria;
-                // Search logic
                 List<Order> results = orderService.searchOrders(searchCriteriaDTO);
 
-                // Notification and UI updates
                 if (results.isEmpty()) {
                     Notification.show("Geen resultaten gevonden.", 3000, Notification.Position.MIDDLE);
                 } else {
@@ -135,9 +132,8 @@ public class DashboardView extends AppLayoutTemplate {
                 }
 
                 orderGrid.setItems(results);
-                errorLabel.setText(""); // This will clear the error only after a successful search with results
+                errorLabel.setText("");
             } else {
-                // Error handling for binder validation failures
                 errorLabel.setText("Vul de velden correct in.");
             }
         });
@@ -157,7 +153,7 @@ public class DashboardView extends AppLayoutTemplate {
     private Component buildEmailButton() {
         Button emailButton = new Button("Stuur Email", event -> {
             List<Order> currentOrders = orderGrid.getListDataView().getItems().toList();
-            if (currentOrders.isEmpty() || searchCriteriaDTO.getEmail() == null) {
+            if (currentOrders.isEmpty() || searchCriteriaDTO.getEmail() == null || searchCriteriaDTO.getEmail().isBlank()) {
                 Notification.show("Geen resultaten of e-mail om te verzenden.", 3000, Notification.Position.MIDDLE);
                 return;
             }

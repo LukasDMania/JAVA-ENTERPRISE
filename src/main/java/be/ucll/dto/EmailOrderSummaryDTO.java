@@ -13,6 +13,7 @@ public class EmailOrderSummaryDTO implements Serializable {
 
     public EmailOrderSummaryDTO(String email, List<Long> orderIds) {
         this.email = email;
+        this.orderIds = orderIds;
     }
 
     public String getEmail() {
