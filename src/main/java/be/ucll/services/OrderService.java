@@ -6,6 +6,7 @@ import be.ucll.repositories.OrderRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.criteria.*;
+import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -38,10 +39,14 @@ public class OrderService {
             predicates.add(cb.le(order.get("totalPrice"), searchCriteriaDTO.getMaxAmount()));
         }
 
-        if (searchCriteriaDTO.isDelivered()) {
-            predicates.add(cb.isTrue(order.get("delivered")));
+        if (searchCriteriaDTO.isDeliveredNullable() != null) {
+            if (searchCriteriaDTO.isDeliveredNullable()) {
+                predicates.add(cb.isTrue(order.get("delivered")));
+            } else {
+                predicates.add(cb.isFalse(order.get("delivered")));
+            }
         }
-        
+
         if (searchCriteriaDTO.getProductName() != null && !searchCriteriaDTO.getProductName().isBlank()) {
             Join<Object, Object> productJoin = order.join("products", JoinType.LEFT);
             predicates.add(cb.like(cb.lower(productJoin.get("name")),
@@ -49,7 +54,6 @@ public class OrderService {
             query.distinct(true);
         }
 
-        // Use cb.size() for product count
         if (searchCriteriaDTO.getProductCount() != null) {
             predicates.add(cb.equal(cb.size(order.get("products")), searchCriteriaDTO.getProductCount()));
         }
@@ -57,6 +61,13 @@ public class OrderService {
         query.select(order).where(predicates.toArray(new Predicate[0]));
 
         return em.createQuery(query).getResultList();
+    }
+
+    @Transactional
+    public Optional<Order> getOrderWithProducts(Long id) {
+        Optional<Order> orderOpt = orderRepository.findById(id);
+        orderOpt.ifPresent(order -> order.getProducts().size());
+        return orderOpt;
     }
 
     public Optional<Order> findById(Long id) {

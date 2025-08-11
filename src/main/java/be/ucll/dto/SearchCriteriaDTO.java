@@ -6,7 +6,7 @@ public class SearchCriteriaDTO {
     private BigDecimal minAmount;
     private BigDecimal maxAmount;
     private Integer productCount;
-    private boolean delivered;
+    private Boolean delivered;
     private String productName;
     private String email;
 
@@ -31,10 +31,10 @@ public class SearchCriteriaDTO {
         this.productCount = productCount;
     }
 
-    public boolean isDelivered() {
+    public Boolean isDeliveredNullable() {
         return delivered;
     }
-    public void setDelivered(boolean delivered) {
+    public void setDeliveredNullable(Boolean delivered) {
         this.delivered = delivered;
     }
 

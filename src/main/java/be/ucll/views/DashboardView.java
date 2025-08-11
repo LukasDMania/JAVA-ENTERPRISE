@@ -4,19 +4,20 @@ import be.ucll.dto.SearchCriteriaDTO;
 import be.ucll.entities.Order;
 import be.ucll.services.EmailQueueProducerService;
 import be.ucll.services.OrderService;
+import be.ucll.services.ProductService;
 import be.ucll.util.AppLayoutTemplate;
 import be.ucll.util.AppRoutes;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.button.Button;
-import com.vaadin.flow.component.checkbox.Checkbox;
+import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.component.textfield.EmailField;
 import com.vaadin.flow.component.textfield.NumberField;
-import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.binder.Binder;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
@@ -34,6 +35,9 @@ public class DashboardView extends AppLayoutTemplate {
 
     @Autowired
     private OrderService orderService;
+
+    @Autowired
+    private ProductService productService;
 
     @Autowired
     private EmailQueueProducerService jmsEmailService;
@@ -61,8 +65,27 @@ public class DashboardView extends AppLayoutTemplate {
         NumberField minAmount = new NumberField("Minimum bedrag");
         NumberField maxAmount = new NumberField("Maximum bedrag");
         NumberField productCount = new NumberField("Aantal producten");
-        Checkbox delivered = new Checkbox("Afgeleverd");
-        TextField productName = new TextField("Product naam");
+        Select<String> deliveredSelect = new Select<>();
+        deliveredSelect.setLabel("Afgeleverd");
+        deliveredSelect.setItems("Alle", "Ja", "Nee");
+        deliveredSelect.setValue("Alle");
+
+        ComboBox<String> productName = new ComboBox<>("Product name");
+        productName.setAllowCustomValue(true);
+
+
+        //TODO: retry pagination instead of calling full dataset
+        productName.setItems(query -> {
+            String filter = query.getFilter().orElse("");
+            return productService.autocompleteProductNames(filter)
+                    .stream()
+                    .skip(query.getOffset())
+                    .limit(query.getLimit());
+        });
+
+
+
+
         EmailField email = new EmailField("Email adres");
 
         Span errorLabel = new Span();
@@ -95,17 +118,26 @@ public class DashboardView extends AppLayoutTemplate {
                 .withValidator(val -> val == null || val >= 0, "Aantal moet positief zijn")
                 .bind(SearchCriteriaDTO::getProductCount, SearchCriteriaDTO::setProductCount);
 
-        binder.forField(delivered)
-                .bind(SearchCriteriaDTO::isDelivered, SearchCriteriaDTO::setDelivered);
+        binder.forField(deliveredSelect)
+                .withConverter(
+                        value -> {
+                            if ("Ja".equals(value)) return Boolean.TRUE;
+                            if ("Nee".equals(value)) return Boolean.FALSE;
+                            return null;
+                        },
+                        boolValue -> {
+                            if (boolValue == null) return "Alle";
+                            return boolValue ? "Ja" : "Nee";
+                        }
+                )
+                .bind(SearchCriteriaDTO::isDeliveredNullable, SearchCriteriaDTO::setDeliveredNullable);
 
         binder.forField(productName)
                 .bind(SearchCriteriaDTO::getProductName, SearchCriteriaDTO::setProductName);
 
         binder.forField(email)
-                .withValidator(value -> value == null
-                                || value.matches("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"),
-                        "Ongeldig e-mailadres")
                 .bind(SearchCriteriaDTO::getEmail, SearchCriteriaDTO::setEmail);
+
 
         Button clearButton = new Button("Wissen", event -> {
             binder.readBean(new SearchCriteriaDTO());
@@ -140,7 +172,7 @@ public class DashboardView extends AppLayoutTemplate {
 
 
         FormLayout formLayout = new FormLayout(
-                minAmount, maxAmount, productCount, delivered,
+                minAmount, maxAmount, productCount, deliveredSelect,
                 productName, email, clearButton, searchButton
         );
         formLayout.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 2));
@@ -153,13 +185,19 @@ public class DashboardView extends AppLayoutTemplate {
     private Component buildEmailButton() {
         Button emailButton = new Button("Stuur Email", event -> {
             List<Order> currentOrders = orderGrid.getListDataView().getItems().toList();
-            if (currentOrders.isEmpty() || searchCriteriaDTO.getEmail() == null || searchCriteriaDTO.getEmail().isBlank()) {
-                Notification.show("Geen resultaten of e-mail om te verzenden.", 3000, Notification.Position.MIDDLE);
+
+            if (currentOrders.isEmpty()) {
+                Notification.show("Geen resultaten om te verzenden.", 3000, Notification.Position.MIDDLE);
                 return;
             }
 
-            jmsEmailService.sendOrderSummaryEmail(searchCriteriaDTO.getEmail(), currentOrders);
+            String emailAddress = searchCriteriaDTO.getEmail();
+            if (emailAddress == null || emailAddress.isBlank() || !emailAddress.matches("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) {
+                Notification.show("Voer een geldig e-mailadres in", 3000, Notification.Position.MIDDLE);
+                return;
+            }
 
+            jmsEmailService.sendOrderSummaryEmail(emailAddress, currentOrders);
             Notification.show("Email wordt verzonden...", 3000, Notification.Position.MIDDLE);
         });
         return emailButton;
@@ -201,6 +239,10 @@ public class DashboardView extends AppLayoutTemplate {
 
         String email = criteria.getEmail();
         if (email != null && !email.isBlank()) {
+            return true;
+        }
+
+        if (criteria.isDeliveredNullable() != null) {
             return true;
         }
 
