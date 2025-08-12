@@ -21,7 +21,9 @@ import com.vaadin.flow.component.textfield.NumberField;
 import com.vaadin.flow.data.binder.Binder;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
+import com.vaadin.flow.server.VaadinSession;
 import jakarta.annotation.security.PermitAll;
+import jakarta.annotation.security.RolesAllowed;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
@@ -30,7 +32,7 @@ import java.util.List;
 
 @Route(AppRoutes.DASHBOARD_VIEW)
 @PageTitle("Order Dashboard")
-@PermitAll
+@RolesAllowed("USER")
 public class DashboardView extends AppLayoutTemplate {
 
     @Autowired
@@ -49,6 +51,7 @@ public class DashboardView extends AppLayoutTemplate {
 
     public DashboardView() {
         setBody(buildDashboardLayout());
+        restoreSession();
     }
 
     private VerticalLayout buildDashboardLayout() {
@@ -165,6 +168,9 @@ public class DashboardView extends AppLayoutTemplate {
 
                 orderGrid.setItems(results);
                 errorLabel.setText("");
+
+                VaadinSession.getCurrent().setAttribute("lastSearchCriteria", this.searchCriteriaDTO);
+                VaadinSession.getCurrent().setAttribute("lastSearchResults", results);
             } else {
                 errorLabel.setText("Vul de velden correct in.");
             }
@@ -247,5 +253,16 @@ public class DashboardView extends AppLayoutTemplate {
         }
 
         return false;
+    }
+
+    private void restoreSession(){
+        SearchCriteriaDTO savedCriteria = (SearchCriteriaDTO) VaadinSession.getCurrent().getAttribute("lastSearchCriteria");
+        List<Order> savedResults = (List<Order>) VaadinSession.getCurrent().getAttribute("lastSearchResults");
+
+        if (savedCriteria != null && savedResults != null) {
+            binder.readBean(savedCriteria);
+            orderGrid.setItems(savedResults);
+            this.searchCriteriaDTO = savedCriteria;
+        }
     }
 }
