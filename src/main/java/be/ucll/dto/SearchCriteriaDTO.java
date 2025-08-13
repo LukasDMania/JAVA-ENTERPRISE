@@ -1,6 +1,10 @@
 package be.ucll.dto;
 
+import com.sun.jna.platform.win32.Sspi;
+
 import java.math.BigDecimal;
+import java.security.Timestamp;
+import java.time.LocalDateTime;
 
 public class SearchCriteriaDTO {
     private BigDecimal minAmount;
@@ -9,6 +13,7 @@ public class SearchCriteriaDTO {
     private Boolean delivered;
     private String productName;
     private String email;
+    private LocalDateTime createdDate;
 
     public BigDecimal getMinAmount() {
         return minAmount;
@@ -50,5 +55,12 @@ public class SearchCriteriaDTO {
     }
     public void setEmail(String email) {
         this.email = email;
+    }
+
+    public LocalDateTime getCreatedDate() {
+        return createdDate;
+    }
+    public void setCreatedDate(LocalDateTime createdDate) {
+        this.createdDate = createdDate;
     }
 }

@@ -24,16 +24,22 @@ import com.vaadin.flow.router.Route;
 import com.vaadin.flow.server.VaadinSession;
 import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
+import org.jboss.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
-import java.util.Collections;
-import java.util.List;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
 
 @Route(AppRoutes.DASHBOARD_VIEW)
 @PageTitle("Order Dashboard")
 @RolesAllowed("USER")
 public class DashboardView extends AppLayoutTemplate {
+
+    private static final Logger log = Logger.getLogger(DashboardView.class.getName());
+    private static final String SEARCH_HISTORY_SESSION_KEY = "searchHistory";
+    private static final int MAX_HISTORY_SIZE = 5;
 
     @Autowired
     private OrderService orderService;
@@ -48,8 +54,10 @@ public class DashboardView extends AppLayoutTemplate {
     private final Binder<SearchCriteriaDTO> binder = new Binder<>(SearchCriteriaDTO.class);
 
     private final Grid<Order> orderGrid = new Grid<>();
+    ComboBox<SearchCriteriaDTO> historyComboBox = new ComboBox<>("Recente Zoekopdrachten");
 
     public DashboardView() {
+        log.info("DashboardView initialized");
         setBody(buildDashboardLayout());
         restoreSession();
     }
@@ -76,7 +84,6 @@ public class DashboardView extends AppLayoutTemplate {
         ComboBox<String> productName = new ComboBox<>("Product name");
         productName.setAllowCustomValue(true);
 
-
         //TODO: retry pagination instead of calling full dataset
         productName.setItems(query -> {
             String filter = query.getFilter().orElse("");
@@ -86,13 +93,19 @@ public class DashboardView extends AppLayoutTemplate {
                     .limit(query.getLimit());
         });
 
-
-
-
         EmailField email = new EmailField("Email adres");
 
         Span errorLabel = new Span();
         errorLabel.getStyle().set("color", "red");
+
+        historyComboBox.setItemLabelGenerator(this::createHistoryLabel);
+        historyComboBox.addValueChangeListener(event -> {
+            if (event.getValue() != null) {
+                binder.readBean(event.getValue());
+                performSearch(event.getValue());
+            }
+        });
+        loadHistory();
 
 
         binder.forField(minAmount)
@@ -149,29 +162,21 @@ public class DashboardView extends AppLayoutTemplate {
         });
 
         Button searchButton = new Button("Zoeken", event -> {
+            log.info("User triggered search");
+
             SearchCriteriaDTO tempCriteria = new SearchCriteriaDTO();
 
             if (binder.writeBeanIfValid(tempCriteria)) {
                 if (!hasAtLeastOneCriteria(tempCriteria)) {
+                    log.warn("Search attempted with no criteria");
                     errorLabel.setText("Geef ten minste één zoekcriteria op.");
                     return;
                 }
 
-                this.searchCriteriaDTO = tempCriteria;
-                List<Order> results = orderService.searchOrders(searchCriteriaDTO);
-
-                if (results.isEmpty()) {
-                    Notification.show("Geen resultaten gevonden.", 3000, Notification.Position.MIDDLE);
-                } else {
-                    Notification.show(results.size() + " resultaten gevonden.", 3000, Notification.Position.MIDDLE);
-                }
-
-                orderGrid.setItems(results);
+                performSearch(tempCriteria);
                 errorLabel.setText("");
-
-                VaadinSession.getCurrent().setAttribute("lastSearchCriteria", this.searchCriteriaDTO);
-                VaadinSession.getCurrent().setAttribute("lastSearchResults", results);
             } else {
+                log.warn("Search form validation failed");
                 errorLabel.setText("Vul de velden correct in.");
             }
         });
@@ -179,7 +184,7 @@ public class DashboardView extends AppLayoutTemplate {
 
         FormLayout formLayout = new FormLayout(
                 minAmount, maxAmount, productCount, deliveredSelect,
-                productName, email, clearButton, searchButton
+                productName, email, clearButton, searchButton, historyComboBox
         );
         formLayout.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 2));
 
@@ -264,5 +269,95 @@ public class DashboardView extends AppLayoutTemplate {
             orderGrid.setItems(savedResults);
             this.searchCriteriaDTO = savedCriteria;
         }
+    }
+
+    private void performSearch(SearchCriteriaDTO criteria) {
+        this.searchCriteriaDTO = criteria;
+        List<Order> results = orderService.searchOrders(searchCriteriaDTO);
+        log.infof("Search completed. Criteria: %s, Results: %d", criteria, results.size());
+
+        if (results.isEmpty()) {
+            Notification.show("Geen resultaten gevonden.", 3000, Notification.Position.MIDDLE);
+        } else {
+            Notification.show(results.size() + " resultaten gevonden.", 3000, Notification.Position.MIDDLE);
+        }
+
+        orderGrid.setItems(results);
+
+        criteria.setCreatedDate(LocalDateTime.now());
+        addToHistory(criteria);
+
+        VaadinSession.getCurrent().setAttribute("lastSearchCriteria", this.searchCriteriaDTO);
+        VaadinSession.getCurrent().setAttribute("lastSearchResults", results);
+    }
+
+    private void addToHistory(SearchCriteriaDTO criteria) {
+        LinkedList<SearchCriteriaDTO> history = (LinkedList<SearchCriteriaDTO>)
+                VaadinSession.getCurrent().getAttribute(SEARCH_HISTORY_SESSION_KEY);
+
+        if (history == null) {
+            history = new LinkedList<>();
+        }
+
+        Optional<SearchCriteriaDTO> existingMatch = history.stream()
+                .filter(existing -> areCriteriaEqual(existing, criteria))
+                .findFirst();
+
+        if (existingMatch.isPresent()) {
+            SearchCriteriaDTO existing = existingMatch.get();
+            existing.setCreatedDate(criteria.getCreatedDate());
+
+            history.remove(existing);
+            history.addFirst(existing);
+        } else {
+            history.addFirst(criteria);
+
+            if (history.size() > MAX_HISTORY_SIZE) {
+                history.removeLast();
+            }
+        }
+
+        VaadinSession.getCurrent().setAttribute(SEARCH_HISTORY_SESSION_KEY, history);
+        historyComboBox.setItems(history);
+    }
+
+    private void loadHistory() {
+        LinkedList<SearchCriteriaDTO> history = (LinkedList<SearchCriteriaDTO>) VaadinSession.getCurrent().getAttribute(SEARCH_HISTORY_SESSION_KEY);
+        if (history != null) {
+            historyComboBox.setItems(history);
+        }
+    }
+
+    private String createHistoryLabel(SearchCriteriaDTO criteria) {
+        StringBuilder labelBuilder = new StringBuilder();
+        if (criteria.getCreatedDate() != null) {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm:ss");
+            labelBuilder.append(formatter.format(criteria.getCreatedDate())).append(": ");
+        }
+
+        List<String> parts = new LinkedList<>();
+        Optional.ofNullable(criteria.getMinAmount()).map(v -> "Min bedrag: " + v).ifPresent(parts::add);
+        Optional.ofNullable(criteria.getMaxAmount()).map(v -> "Max bedrag: " + v).ifPresent(parts::add);
+        Optional.ofNullable(criteria.getProductCount()).map(v -> "Aantal prod: " + v).ifPresent(parts::add);
+        Optional.ofNullable(criteria.getProductName()).filter(s -> !s.isBlank()).map(v -> "Product: " + v).ifPresent(parts::add);
+        Optional.ofNullable(criteria.getEmail()).filter(s -> !s.isBlank()).map(v -> "Email: " + v).ifPresent(parts::add);
+        Optional.ofNullable(criteria.isDeliveredNullable()).map(v -> "Afgeleverd: " + (v ? "Ja" : "Nee")).ifPresent(parts::add);
+
+        if (parts.isEmpty()) {
+            return "Lege zoekopdracht";
+        }
+
+        labelBuilder.append(String.join(", ", parts));
+
+        return labelBuilder.toString();
+    }
+
+    private boolean areCriteriaEqual(SearchCriteriaDTO a, SearchCriteriaDTO b) {
+        return Objects.equals(a.getMinAmount(), b.getMinAmount()) &&
+                Objects.equals(a.getMaxAmount(), b.getMaxAmount()) &&
+                Objects.equals(a.getProductCount(), b.getProductCount()) &&
+                Objects.equals(a.getProductName(), b.getProductName()) &&
+                Objects.equals(a.getEmail(), b.getEmail()) &&
+                Objects.equals(a.isDeliveredNullable(), b.isDeliveredNullable());
     }
 }

@@ -18,6 +18,7 @@ import com.vaadin.flow.router.Route;
 import com.vaadin.flow.theme.Theme;
 import com.vaadin.flow.theme.lumo.Lumo;
 import jakarta.annotation.security.PermitAll;
+import org.jboss.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.AuthenticationException;
 
@@ -25,10 +26,14 @@ import org.springframework.security.core.AuthenticationException;
 @PageTitle("Login")
 @PermitAll
 public class LoginView extends AppLayoutTemplate {
+
+    private static final Logger log = Logger.getLogger(LoginView.class);
+
     @Autowired
     private LoginService loginService;
 
     public LoginView() {
+        log.info("LoginView initialized");
         setBody(buildLoginLayout());
     }
 
@@ -75,8 +80,10 @@ public class LoginView extends AppLayoutTemplate {
 
         loginButton.addClickListener(_ -> {
             if (binder.writeBeanIfValid(loginDTO)) {
+                log.infof("Login attempt for username: %s", loginDTO.getUsername());
                 handleLogin(loginDTO, errorLabel);
             } else {
+                log.warn("Login form validation failed");
                 errorLabel.setText("Ongeldige gebruikersnaam of wachtwoord.");
             }
         });
@@ -87,9 +94,11 @@ public class LoginView extends AppLayoutTemplate {
     private void handleLogin(LoginDTO loginDTO, Span errorLabel) {
         try {
             loginService.authenticate(loginDTO);
+            log.infof("Login successful for user: %s", loginDTO.getUsername());
             Notification.show("Login Successful", 2000, Notification.Position.MIDDLE);
             getUI().ifPresent(ui -> ui.navigate(AppRoutes.DASHBOARD_VIEW));
         } catch (AuthenticationException e) {
+            log.warnf("Login failed for user: %s", loginDTO.getUsername());
             errorLabel.setText("Ongeldige gebruikersnaam of wachtwoord.");
         }
     }
