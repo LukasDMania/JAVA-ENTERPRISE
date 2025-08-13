@@ -1,5 +1,8 @@
 package be.ucll.views;
 
+import be.ucll.components.dashboard.EmailButton;
+import be.ucll.components.dashboard.OrderGrid;
+import be.ucll.components.dashboard.SearchForm;
 import be.ucll.dto.SearchCriteriaDTO;
 import be.ucll.entities.Order;
 import be.ucll.services.EmailQueueProducerService;
@@ -7,6 +10,8 @@ import be.ucll.services.OrderService;
 import be.ucll.services.ProductService;
 import be.ucll.util.AppLayoutTemplate;
 import be.ucll.util.AppRoutes;
+import be.ucll.util.SearchHistoryHandler;
+import com.vaadin.flow.component.AttachEvent;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -37,9 +42,7 @@ import java.util.*;
 @RolesAllowed("USER")
 public class DashboardView extends AppLayoutTemplate {
 
-    private static final Logger log = Logger.getLogger(DashboardView.class.getName());
-    private static final String SEARCH_HISTORY_SESSION_KEY = "searchHistory";
-    private static final int MAX_HISTORY_SIZE = 5;
+    private static final Logger log = Logger.getLogger(DashboardView.class);
 
     @Autowired
     private OrderService orderService;
@@ -50,11 +53,11 @@ public class DashboardView extends AppLayoutTemplate {
     @Autowired
     private EmailQueueProducerService jmsEmailService;
 
-    private SearchCriteriaDTO searchCriteriaDTO = new SearchCriteriaDTO();
-    private final Binder<SearchCriteriaDTO> binder = new Binder<>(SearchCriteriaDTO.class);
+    private final SearchHistoryHandler searchHistoryHandler =  new SearchHistoryHandler();
 
-    private final Grid<Order> orderGrid = new Grid<>();
-    ComboBox<SearchCriteriaDTO> historyComboBox = new ComboBox<>("Recente Zoekopdrachten");
+    private SearchForm searchForm;
+    private OrderGrid orderGrid;
+    private EmailButton emailButton;
 
     public DashboardView() {
         log.info("DashboardView initialized");
@@ -63,301 +66,80 @@ public class DashboardView extends AppLayoutTemplate {
     }
 
     private VerticalLayout buildDashboardLayout() {
-        VerticalLayout layout = new VerticalLayout();
+        orderGrid = new OrderGrid();
+        searchForm = new SearchForm(productService, searchHistoryHandler);
+        emailButton = new EmailButton();
+
+        VerticalLayout layout = new VerticalLayout(searchForm, orderGrid, emailButton);
         layout.setSizeFull();
         layout.setPadding(true);
         layout.setSpacing(true);
 
-        layout.add(buildSearchForm(), buildOrderGrid(), buildEmailButton());
+        initEventListeners();
+
         return layout;
     }
 
-    private Component buildSearchForm() {
-        NumberField minAmount = new NumberField("Minimum bedrag");
-        NumberField maxAmount = new NumberField("Maximum bedrag");
-        NumberField productCount = new NumberField("Aantal producten");
-        Select<String> deliveredSelect = new Select<>();
-        deliveredSelect.setLabel("Afgeleverd");
-        deliveredSelect.setItems("Alle", "Ja", "Nee");
-        deliveredSelect.setValue("Alle");
-
-        ComboBox<String> productName = new ComboBox<>("Product name");
-        productName.setAllowCustomValue(true);
-
-        //TODO: retry pagination instead of calling full dataset
-        productName.setItems(query -> {
-            String filter = query.getFilter().orElse("");
-            return productService.autocompleteProductNames(filter)
-                    .stream()
-                    .skip(query.getOffset())
-                    .limit(query.getLimit());
+    private void initEventListeners() {
+        searchForm.addListener(SearchForm.SearchEvent.class, event -> {
+            handleSearch(event.getCriteria());
         });
 
-        EmailField email = new EmailField("Email adres");
-
-        Span errorLabel = new Span();
-        errorLabel.getStyle().set("color", "red");
-
-        historyComboBox.setItemLabelGenerator(this::createHistoryLabel);
-        historyComboBox.addValueChangeListener(event -> {
-            if (event.getValue() != null) {
-                binder.readBean(event.getValue());
-                performSearch(event.getValue());
-            }
-        });
-        loadHistory();
-
-
-        binder.forField(minAmount)
-                .withConverter(
-                        doubleValue -> doubleValue == null ? null : BigDecimal.valueOf(doubleValue),
-                        bigDecimalValue -> bigDecimalValue == null ? null : bigDecimalValue.doubleValue(),
-                        "Het bedrag moet een nummer zijn"
-                )
-                .withValidator(val -> val == null || val.compareTo(BigDecimal.ZERO) >= 0, "Minimum bedrag moet positief zijn")
-                .bind(SearchCriteriaDTO::getMinAmount, SearchCriteriaDTO::setMinAmount);
-
-        binder.forField(maxAmount)
-                .withConverter(
-                        doubleValue -> doubleValue == null ? null : BigDecimal.valueOf(doubleValue),
-                        bigDecimalValue -> bigDecimalValue == null ? null : bigDecimalValue.doubleValue(),
-                        "Het bedrag moet een nummer zijn")
-                .withValidator(val -> val == null || val.compareTo(BigDecimal.ZERO) >= 0, "Maximaal bedrag moet positief zijn")
-                .bind(SearchCriteriaDTO::getMaxAmount, SearchCriteriaDTO::setMaxAmount);
-
-        binder.forField(productCount)
-                .withConverter(
-                        doubleValue -> doubleValue == null ? null : doubleValue.intValue(),
-                        intValue -> intValue == null ? null : intValue.doubleValue(),
-                        "Het aantal moet een nummer zijn"
-                )
-                .withValidator(val -> val == null || val >= 0, "Aantal moet positief zijn")
-                .bind(SearchCriteriaDTO::getProductCount, SearchCriteriaDTO::setProductCount);
-
-        binder.forField(deliveredSelect)
-                .withConverter(
-                        value -> {
-                            if ("Ja".equals(value)) return Boolean.TRUE;
-                            if ("Nee".equals(value)) return Boolean.FALSE;
-                            return null;
-                        },
-                        boolValue -> {
-                            if (boolValue == null) return "Alle";
-                            return boolValue ? "Ja" : "Nee";
-                        }
-                )
-                .bind(SearchCriteriaDTO::isDeliveredNullable, SearchCriteriaDTO::setDeliveredNullable);
-
-        binder.forField(productName)
-                .bind(SearchCriteriaDTO::getProductName, SearchCriteriaDTO::setProductName);
-
-        binder.forField(email)
-                .bind(SearchCriteriaDTO::getEmail, SearchCriteriaDTO::setEmail);
-
-
-        Button clearButton = new Button("Wissen", event -> {
-            binder.readBean(new SearchCriteriaDTO());
+        searchForm.addListener(SearchForm.ClearEvent.class, event -> {
             orderGrid.setItems(Collections.emptyList());
-            errorLabel.setText("");
         });
 
-        Button searchButton = new Button("Zoeken", event -> {
-            log.info("User triggered search");
-
-            SearchCriteriaDTO tempCriteria = new SearchCriteriaDTO();
-
-            if (binder.writeBeanIfValid(tempCriteria)) {
-                if (!hasAtLeastOneCriteria(tempCriteria)) {
-                    log.warn("Search attempted with no criteria");
-                    errorLabel.setText("Geef ten minste één zoekcriteria op.");
-                    return;
-                }
-
-                performSearch(tempCriteria);
-                errorLabel.setText("");
-            } else {
-                log.warn("Search form validation failed");
-                errorLabel.setText("Vul de velden correct in.");
-            }
+        searchHistoryHandler.addHistoryChangedListener(event -> {
+            searchForm.setHistoryComboBoxItems(event.getHistory());
         });
 
-
-        FormLayout formLayout = new FormLayout(
-                minAmount, maxAmount, productCount, deliveredSelect,
-                productName, email, clearButton, searchButton, historyComboBox
-        );
-        formLayout.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 2));
-
-        VerticalLayout wrapper = new VerticalLayout(formLayout, errorLabel);
-        wrapper.setAlignItems(Alignment.START);
-        return wrapper;
-    }
-
-    private Component buildEmailButton() {
-        Button emailButton = new Button("Stuur Email", event -> {
-            List<Order> currentOrders = orderGrid.getListDataView().getItems().toList();
-
-            if (currentOrders.isEmpty()) {
-                Notification.show("Geen resultaten om te verzenden.", 3000, Notification.Position.MIDDLE);
-                return;
-            }
-
-            String emailAddress = searchCriteriaDTO.getEmail();
-            if (emailAddress == null || emailAddress.isBlank() || !emailAddress.matches("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) {
-                Notification.show("Voer een geldig e-mailadres in", 3000, Notification.Position.MIDDLE);
-                return;
-            }
-
-            jmsEmailService.sendOrderSummaryEmail(emailAddress, currentOrders);
-            Notification.show("Email wordt verzonden...", 3000, Notification.Position.MIDDLE);
+        emailButton.addSendEmailListener(event -> {
+            jmsEmailService.sendOrderSummaryEmail(event.getEmail(), event.getOrders());
         });
-        return emailButton;
     }
 
-    private Component buildOrderGrid() {
-        orderGrid.removeAllColumns();
+    private void handleSearch(SearchCriteriaDTO criteria) {
+        criteria.setCreatedDate(LocalDateTime.now());
 
-        orderGrid.addColumn(Order::getId).setHeader("Bestelling Id");
-        orderGrid.addColumn(Order::getCustomerNumber).setHeader("Klanten nr");
-        orderGrid.addColumn(order ->  order.getProducts().size()).setHeader("Aantal Produkten");
-        orderGrid.addColumn(Order::isDelivered).setHeader("Afgeleverd?");
-        orderGrid.addColumn(Order::getTotalPrice).setHeader("Totaal");
+        List<Order> results = orderService.searchOrders(criteria);
+        orderGrid.setItems(results);
 
-        orderGrid.addComponentColumn(order -> {
-            Button detailButton = new Button("Details", event -> {
-                getUI().ifPresent(ui -> ui.navigate("order/" + order.getId()));
-            });
-            return detailButton;
-        }).setHeader("Details");
+        searchHistoryHandler.addToHistory(criteria);
 
-        orderGrid.setWidthFull();
-        orderGrid.setItems(Collections.emptyList());
+        VaadinSession.getCurrent().setAttribute("lastSearchCriteria", criteria);
+        VaadinSession.getCurrent().setAttribute("lastSearchResults", results);
 
-        return orderGrid;
-    }
-
-    private boolean hasAtLeastOneCriteria(SearchCriteriaDTO criteria) {
-        if (criteria.getMinAmount() != null ||
-                criteria.getMaxAmount() != null ||
-                criteria.getProductCount() != null) {
-            return true;
-        }
-
-        String productName = criteria.getProductName();
-        if (productName != null && !productName.isBlank()) {
-            return true;
-        }
-
-        String email = criteria.getEmail();
-        if (email != null && !email.isBlank()) {
-            return true;
-        }
-
-        if (criteria.isDeliveredNullable() != null) {
-            return true;
-        }
-
-        return false;
-    }
-
-    private void restoreSession(){
-        SearchCriteriaDTO savedCriteria = (SearchCriteriaDTO) VaadinSession.getCurrent().getAttribute("lastSearchCriteria");
-        List<Order> savedResults = (List<Order>) VaadinSession.getCurrent().getAttribute("lastSearchResults");
-
-        if (savedCriteria != null && savedResults != null) {
-            binder.readBean(savedCriteria);
-            orderGrid.setItems(savedResults);
-            this.searchCriteriaDTO = savedCriteria;
-        }
-    }
-
-    private void performSearch(SearchCriteriaDTO criteria) {
-        this.searchCriteriaDTO = criteria;
-        List<Order> results = orderService.searchOrders(searchCriteriaDTO);
-        log.infof("Search completed. Criteria: %s, Results: %d", criteria, results.size());
+        emailButton.setOrders(results);
+        emailButton.setEmailAddress(criteria.getEmail());
 
         if (results.isEmpty()) {
             Notification.show("Geen resultaten gevonden.", 3000, Notification.Position.MIDDLE);
         } else {
             Notification.show(results.size() + " resultaten gevonden.", 3000, Notification.Position.MIDDLE);
         }
-
-        orderGrid.setItems(results);
-
-        criteria.setCreatedDate(LocalDateTime.now());
-        addToHistory(criteria);
-
-        VaadinSession.getCurrent().setAttribute("lastSearchCriteria", this.searchCriteriaDTO);
-        VaadinSession.getCurrent().setAttribute("lastSearchResults", results);
     }
 
-    private void addToHistory(SearchCriteriaDTO criteria) {
-        LinkedList<SearchCriteriaDTO> history = (LinkedList<SearchCriteriaDTO>)
-                VaadinSession.getCurrent().getAttribute(SEARCH_HISTORY_SESSION_KEY);
+    private void restoreSession() {
+        SearchCriteriaDTO savedCriteria = (SearchCriteriaDTO) VaadinSession.getCurrent().getAttribute("lastSearchCriteria");
+        List<Order> savedResults = (List<Order>) VaadinSession.getCurrent().getAttribute("lastSearchResults");
 
-        if (history == null) {
-            history = new LinkedList<>();
-        }
+        if (savedCriteria != null && savedResults != null) {
+            searchForm.loadCriteria(savedCriteria);
+            orderGrid.setItems(savedResults);
 
-        Optional<SearchCriteriaDTO> existingMatch = history.stream()
-                .filter(existing -> areCriteriaEqual(existing, criteria))
-                .findFirst();
-
-        if (existingMatch.isPresent()) {
-            SearchCriteriaDTO existing = existingMatch.get();
-            existing.setCreatedDate(criteria.getCreatedDate());
-
-            history.remove(existing);
-            history.addFirst(existing);
-        } else {
-            history.addFirst(criteria);
-
-            if (history.size() > MAX_HISTORY_SIZE) {
-                history.removeLast();
-            }
-        }
-
-        VaadinSession.getCurrent().setAttribute(SEARCH_HISTORY_SESSION_KEY, history);
-        historyComboBox.setItems(history);
-    }
-
-    private void loadHistory() {
-        LinkedList<SearchCriteriaDTO> history = (LinkedList<SearchCriteriaDTO>) VaadinSession.getCurrent().getAttribute(SEARCH_HISTORY_SESSION_KEY);
-        if (history != null) {
-            historyComboBox.setItems(history);
+            emailButton.setOrders(savedResults);
+            emailButton.setEmailAddress(savedCriteria.getEmail());
         }
     }
 
-    private String createHistoryLabel(SearchCriteriaDTO criteria) {
-        StringBuilder labelBuilder = new StringBuilder();
-        if (criteria.getCreatedDate() != null) {
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm:ss");
-            labelBuilder.append(formatter.format(criteria.getCreatedDate())).append(": ");
-        }
+    @Override
+    protected void onAttach(AttachEvent attachEvent) {
+        super.onAttach(attachEvent);
 
-        List<String> parts = new LinkedList<>();
-        Optional.ofNullable(criteria.getMinAmount()).map(v -> "Min bedrag: " + v).ifPresent(parts::add);
-        Optional.ofNullable(criteria.getMaxAmount()).map(v -> "Max bedrag: " + v).ifPresent(parts::add);
-        Optional.ofNullable(criteria.getProductCount()).map(v -> "Aantal prod: " + v).ifPresent(parts::add);
-        Optional.ofNullable(criteria.getProductName()).filter(s -> !s.isBlank()).map(v -> "Product: " + v).ifPresent(parts::add);
-        Optional.ofNullable(criteria.getEmail()).filter(s -> !s.isBlank()).map(v -> "Email: " + v).ifPresent(parts::add);
-        Optional.ofNullable(criteria.isDeliveredNullable()).map(v -> "Afgeleverd: " + (v ? "Ja" : "Nee")).ifPresent(parts::add);
+        searchForm.setHistoryComboBoxItems(searchHistoryHandler.loadHistory());
 
-        if (parts.isEmpty()) {
-            return "Lege zoekopdracht";
-        }
-
-        labelBuilder.append(String.join(", ", parts));
-
-        return labelBuilder.toString();
-    }
-
-    private boolean areCriteriaEqual(SearchCriteriaDTO a, SearchCriteriaDTO b) {
-        return Objects.equals(a.getMinAmount(), b.getMinAmount()) &&
-                Objects.equals(a.getMaxAmount(), b.getMaxAmount()) &&
-                Objects.equals(a.getProductCount(), b.getProductCount()) &&
-                Objects.equals(a.getProductName(), b.getProductName()) &&
-                Objects.equals(a.getEmail(), b.getEmail()) &&
-                Objects.equals(a.isDeliveredNullable(), b.isDeliveredNullable());
+        searchHistoryHandler.addHistoryChangedListener(event -> {
+            searchForm.setHistoryComboBoxItems(event.getHistory());
+        });
     }
 }

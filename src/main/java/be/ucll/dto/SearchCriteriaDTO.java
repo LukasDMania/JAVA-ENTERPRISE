@@ -63,4 +63,43 @@ public class SearchCriteriaDTO {
     public void setCreatedDate(LocalDateTime createdDate) {
         this.createdDate = createdDate;
     }
+
+    public boolean hasAtLeastOneCriteria() {
+        if (getMinAmount() != null ||
+                getMaxAmount() != null ||
+                getProductCount() != null) {
+            return true;
+        }
+
+        String productName = getProductName();
+        if (productName != null && !productName.isBlank()) {
+            return true;
+        }
+
+        String email = getEmail();
+        if (email != null && !email.isBlank()) {
+            return true;
+        }
+
+        if (isDeliveredNullable() != null) {
+            return true;
+        }
+
+        return false;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof SearchCriteriaDTO)) return false;
+
+        SearchCriteriaDTO that = (SearchCriteriaDTO) o;
+
+        return java.util.Objects.equals(minAmount, that.minAmount) &&
+                java.util.Objects.equals(maxAmount, that.maxAmount) &&
+                java.util.Objects.equals(productCount, that.productCount) &&
+                java.util.Objects.equals(productName, that.productName) &&
+                java.util.Objects.equals(email, that.email) &&
+                java.util.Objects.equals(delivered, that.delivered);
+    }
 }

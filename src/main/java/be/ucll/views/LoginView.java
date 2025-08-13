@@ -74,6 +74,7 @@ public class LoginView extends AppLayoutTemplate {
             loginButton.setEnabled(binder.isValid());
         });
     }
+
     private Button createLoginButton(Binder<LoginDTO> binder, LoginDTO loginDTO, Span errorLabel) {
         Button loginButton = new Button("Login");
         loginButton.setEnabled(false);
