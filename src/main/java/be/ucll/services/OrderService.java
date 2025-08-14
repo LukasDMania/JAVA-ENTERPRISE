@@ -74,7 +74,6 @@ public class OrderService {
         return orderRepository.findById(id);
     }
 
-
     public List<Order> findAll() {
         return orderRepository.findAll();
     }

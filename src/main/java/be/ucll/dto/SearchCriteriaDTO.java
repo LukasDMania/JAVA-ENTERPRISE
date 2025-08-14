@@ -1,9 +1,6 @@
 package be.ucll.dto;
 
-import com.sun.jna.platform.win32.Sspi;
-
 import java.math.BigDecimal;
-import java.security.Timestamp;
 import java.time.LocalDateTime;
 
 public class SearchCriteriaDTO {

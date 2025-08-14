@@ -1,14 +1,12 @@
 package be.ucll.util;
 
 import be.ucll.dto.SearchCriteriaDTO;
-import be.ucll.views.DashboardView;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.ComponentEvent;
 import com.vaadin.flow.component.ComponentEventListener;
 import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.flow.shared.Registration;
-import org.jboss.logging.Logger;
 
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedList;

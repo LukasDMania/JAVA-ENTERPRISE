@@ -1,10 +1,7 @@
 package be.ucll.repositories;
 
 import be.ucll.entities.Product;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 

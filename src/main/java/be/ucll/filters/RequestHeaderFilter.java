@@ -2,7 +2,6 @@ package be.ucll.filters;
 
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.beans.factory.annotation.Value;
 
 import java.io.IOException;
 

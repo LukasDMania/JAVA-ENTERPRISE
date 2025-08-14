@@ -1,20 +1,16 @@
 package be.ucll.views;
 
-
+import be.ucll.components.orderdetail.OrderDetailUi;
 import be.ucll.entities.Order;
-import be.ucll.entities.Product;
 import be.ucll.services.OrderService;
 import be.ucll.util.AppLayoutTemplate;
 import be.ucll.util.AppRoutes;
-import com.vaadin.flow.component.button.Button;
-import com.vaadin.flow.component.grid.Grid;
-import com.vaadin.flow.component.html.H2;
-import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.BeforeEnterEvent;
 import com.vaadin.flow.router.BeforeEnterObserver;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.security.RolesAllowed;
 import org.jboss.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,66 +27,49 @@ public class OrderDetailView extends AppLayoutTemplate implements BeforeEnterObs
     @Autowired
     private OrderService orderService;
 
-    private Long orderId;
-    private Order currentOrder;
-
-    private final Span customerNumber = new Span();
-    private final Span deliveredStatus = new Span();
-    private final Span totalPrice = new Span();
-    private final Grid<Product> productGrid = new Grid<>(Product.class);
+    private OrderDetailUi orderDetailUi;
 
     public OrderDetailView() {
         log.info("OrderDetailView initialized");
+    }
+
+    @PostConstruct
+    private void init() {
         setBody(buildDetailLayout());
+        initEventListeners();
     }
 
     private VerticalLayout buildDetailLayout() {
-        VerticalLayout layout = new VerticalLayout();
+        orderDetailUi = new OrderDetailUi();
+
+        VerticalLayout layout = new VerticalLayout(orderDetailUi);
         layout.setSizeFull();
-        layout.setSpacing(true);
+        return layout;
+    }
 
-        H2 title = new H2("Order Details");
-
-        productGrid.removeAllColumns();
-        productGrid.addColumn(Product::getId).setHeader("ID");
-        productGrid.addColumn(Product::getName).setHeader("Name");
-        productGrid.addColumn(Product::getDescription).setHeader("Omschrijving");
-        productGrid.addColumn(Product::getPrice).setHeader("Price");
-
-        Button backButton = new Button("Terug", e ->
+    private void initEventListeners() {
+        orderDetailUi.addBackListener(event ->
                 getUI().ifPresent(ui -> ui.navigate(AppRoutes.DASHBOARD_VIEW))
         );
-
-        layout.add(title, customerNumber, deliveredStatus, totalPrice, productGrid, backButton);
-        return layout;
     }
 
     @Override
     public void beforeEnter(BeforeEnterEvent event) {
         Optional<Long> maybeId = event.getRouteParameters().get("id").map(Long::valueOf);
         if (maybeId.isEmpty()) {
-            log.warn("OrderDetailView accessed without ID, redirecting to dashboard");
+            log.warn("OrderDetailView accessed without ID redirect to dashboard");
             event.forwardTo(AppRoutes.DASHBOARD_VIEW);
             return;
         }
 
         Optional<Order> orderOpt = orderService.getOrderWithProducts(maybeId.get());
         if (orderOpt.isEmpty()) {
-            log.warnf("Order with ID %d not found, redirecting to dashboard", maybeId.get());
+            log.warnf("Order with ID %d not found redirect to dashboard", maybeId.get());
             event.forwardTo(AppRoutes.DASHBOARD_VIEW);
             return;
         }
 
-        currentOrder = orderOpt.get();
-        log.infof("Loaded OrderDetailView for Order ID: %d", currentOrder.getId());
-        populateOrderDetails();
-    }
-
-    private void  populateOrderDetails() {
-        customerNumber.setText(currentOrder.getCustomerNumber());
-        deliveredStatus.setText("Afgeleverd: " + (currentOrder.isDelivered() ? "Ja" : "Nee"));
-        totalPrice.setText("Totale prijs: €" + currentOrder.getTotalPrice().toString());
-
-        productGrid.setItems(currentOrder.getProducts());
+        log.infof("Loaded OrderDetailView for Order ID: %d", orderOpt.get().getId());
+        orderDetailUi.setOrderDetails(orderOpt.get());
     }
 }

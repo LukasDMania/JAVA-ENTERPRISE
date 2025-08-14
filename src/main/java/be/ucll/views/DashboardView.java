@@ -11,30 +11,17 @@ import be.ucll.services.ProductService;
 import be.ucll.util.AppLayoutTemplate;
 import be.ucll.util.AppRoutes;
 import be.ucll.util.SearchHistoryHandler;
-import com.vaadin.flow.component.AttachEvent;
-import com.vaadin.flow.component.Component;
-import com.vaadin.flow.component.button.Button;
-import com.vaadin.flow.component.combobox.ComboBox;
-import com.vaadin.flow.component.formlayout.FormLayout;
-import com.vaadin.flow.component.grid.Grid;
-import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.vaadin.flow.component.select.Select;
-import com.vaadin.flow.component.textfield.EmailField;
-import com.vaadin.flow.component.textfield.NumberField;
-import com.vaadin.flow.data.binder.Binder;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.server.VaadinSession;
-import jakarta.annotation.security.PermitAll;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.security.RolesAllowed;
 import org.jboss.logging.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @Route(AppRoutes.DASHBOARD_VIEW)
@@ -61,8 +48,14 @@ public class DashboardView extends AppLayoutTemplate {
 
     public DashboardView() {
         log.info("DashboardView initialized");
+    }
+
+    //productservice was null when injected into SearchForm so make sure i inject after spring bean injection
+    @PostConstruct
+    private void init() {
         setBody(buildDashboardLayout());
         restoreSession();
+        searchForm.setHistoryComboBoxItems(searchHistoryHandler.loadHistory());
     }
 
     private VerticalLayout buildDashboardLayout() {
@@ -130,16 +123,5 @@ public class DashboardView extends AppLayoutTemplate {
             emailButton.setOrders(savedResults);
             emailButton.setEmailAddress(savedCriteria.getEmail());
         }
-    }
-
-    @Override
-    protected void onAttach(AttachEvent attachEvent) {
-        super.onAttach(attachEvent);
-
-        searchForm.setHistoryComboBoxItems(searchHistoryHandler.loadHistory());
-
-        searchHistoryHandler.addHistoryChangedListener(event -> {
-            searchForm.setHistoryComboBoxItems(event.getHistory());
-        });
     }
 }

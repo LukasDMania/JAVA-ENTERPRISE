@@ -30,11 +30,6 @@ public class JpaConfig {
 
 	private final String[] entityPackages = { "be.ucll" };
 
-	/**
-	 * Embedded H2 DataSource
-	 * DB_CLOSE_DELAY=-1 keeps DB alive across connections until JVM stops
-	 * DB_CLOSE_ON_EXIT=FALSE prevents early shutdown
-	 */
 	@Bean
 	public DataSource dataSource() {
 		BasicDataSource dataSource = new BasicDataSource();
@@ -45,9 +40,6 @@ public class JpaConfig {
 		return dataSource;
 	}
 
-	/**
-	 * Sets READ UNCOMMITTED isolation level after DataSource is ready
-	 */
 	@Bean
 	public H2IsolationLevelInitializerBean h2IsolationLevelInitializerBean(DataSource dataSource) {
 		return new H2IsolationLevelInitializerBean(dataSource);
